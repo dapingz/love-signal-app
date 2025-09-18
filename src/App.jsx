@@ -1,12 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  query, 
+  where, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  getDocs,
+  Timestamp,
+  writeBatch
+} from 'firebase/firestore';
 
-// --- Firebase Configuration ---
-// IMPORTANT: These values will be replaced by Vercel's environment variables during deployment.
-// For local testing, you will create a .env.local file.
+// --- Firebase 配置 ---
+// 注意：这些值将在Vercel的环境变量中被替换
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -16,417 +32,298 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- Icon Component ---
+// --- 图标组件 ---
 const Icon = ({ name, className }) => {
-    const icons = {
-        home: <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
-        book: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>,
-        zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />,
-        map: <><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></>,
-        barChart: <><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></>,
-        settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></>,
-        send: <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>,
-        receive: <><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6" /></>,
-        plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
-        x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
-        edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
-        trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
-        user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
-        gift: <><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M12 8v13" /><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" /><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" /></>,
-        message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
-        heart: <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />,
-        copy: <><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></>,
-    };
-    return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{icons[name]}</svg>;
+  const icons = {
+    send: <path d="M22 2 11 13 2 9l-2 9 9-2 9-9-2-9z" />,
+    receive: <path d="m11 13-2 9 9-2 9-9-2-9-9 9z" />,
+    log: <path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10" />,
+    challenge: <path d="M15.5 22a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5-.5z" />,
+    map: <path d="M21 12V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7.5" />,
+    report: <path d="M2.5 2v6h6V2h-6zm15 0v6h6V2h-6zm-15 15v6h6v-6h-6zm15 0v6h6v-6h-6z" />,
+    settings: <path d="M12.22 2h-4.44L4 6v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6l-3.78-4z" />,
+    plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
+    x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
+    edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
+    trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
+    user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
+    logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
+    arrowRight: <polyline points="9 18 15 12 9 6" />,
+    atSign: <><circle cx="12" cy="12" r="4"></circle><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"></path></>,
+    mail: <><rect x="2" y="4" width="20" height="16" rx="2"></rect><polyline points="22,6 12,13 2,6"></polyline></>,
+    lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></>,
+    dashboard: <path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10" />,
+    logs: <><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>,
+    profile: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
+  };
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {icons[name]}
+    </svg>
+  );
 };
 
-
-// --- Main App Component ---
-export default function App() {
-  const [userId, setUserId] = useState(null);
-  const [activeTab, setActiveTab] = useState('home');
+// --- 主应用组件 (登录后) ---
+const MainApp = ({ user, userData }) => {
+  const [page, setPage] = useState('dashboard');
   const [logs, setLogs] = useState([]);
-  const [showModal, setShowModal] = useState(false);
-  const [currentLog, setCurrentLog] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [usersCache, setUsersCache] = useState({});
 
   useEffect(() => {
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserId(user.uid);
-      } else {
-        signInAnonymously(auth).catch((error) => console.error("Anonymous sign-in failed:", error));
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!userId) return;
-    const appId = 'love-signal-app'; // Your unique app identifier
-
-    const signalsCollection = collection(db, "artifacts", appId, "public", "data", "signals");
-
-    // Queries for signals sent by the user OR received by the user
-    const sentQuery = query(signalsCollection, where("senderId", "==", userId));
-    const receivedQuery = query(signalsCollection, where("recipientId", "==", userId));
-
-    const unsubscribeSent = onSnapshot(sentQuery, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            updateLogsFromSnapshot(change);
-        });
-    });
+    if (!user) return;
     
-    const unsubscribeReceived = onSnapshot(receivedQuery, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            updateLogsFromSnapshot(change);
-        });
+    setUsersCache(prev => ({ ...prev, [user.uid]: userData }));
+
+    const sentQuery = query(collection(db, 'signals'), where('senderId', '==', user.uid));
+    const receivedQuery = query(collection(db, 'signals'), where('recipientId', '==', user.uid));
+
+    const fetchUser = async (uid) => {
+      if (usersCache[uid]) return usersCache[uid];
+      const userRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        setUsersCache(prev => ({...prev, [uid]: userData}));
+        return userData;
+      }
+      return { username: '未知用户' };
+    };
+
+    const processLogs = async (snapshot, type) => {
+        const newLogs = [];
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            const log = { id: doc.id, ...data, timestamp: data.timestamp?.toDate() };
+            
+            if(type === 'sent') {
+                log.direction = 'sent';
+                const recipientData = await fetchUser(data.recipientId);
+                log.otherPartyUsername = recipientData.username;
+            } else {
+                log.direction = 'received';
+                const senderData = await fetchUser(data.senderId);
+                log.otherPartyUsername = senderData.username;
+            }
+            newLogs.push(log);
+        }
+        return newLogs;
+    };
+
+
+    const unsubSent = onSnapshot(sentQuery, async (snapshot) => {
+        const sentLogs = await processLogs(snapshot, 'sent');
+        setLogs(prev => [...sentLogs, ...prev.filter(l => l.direction !== 'sent')].sort((a,b) => b.timestamp - a.timestamp));
     });
 
-    // Helper to avoid duplicate logs in state
-    const updateLogsFromSnapshot = (change) => {
-        const logData = { id: change.doc.id, ...change.doc.data() };
-        setLogs(prevLogs => {
-            const existingLogIndex = prevLogs.findIndex(log => log.id === logData.id);
-            if (change.type === "added") {
-                if (existingLogIndex === -1) {
-                    return [...prevLogs, logData].sort((a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis());
-                }
-                return prevLogs; // Already exists
-            }
-            if (change.type === "modified") {
-                if (existingLogIndex !== -1) {
-                    const newLogs = [...prevLogs];
-                    newLogs[existingLogIndex] = logData;
-                    return newLogs.sort((a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis());
-                }
-            }
-            if (change.type === "removed") {
-                return prevLogs.filter(log => log.id !== logData.id);
-            }
-            return prevLogs;
-        });
-    };
+    const unsubReceived = onSnapshot(receivedQuery, async (snapshot) => {
+        const receivedLogs = await processLogs(snapshot, 'received');
+        setLogs(prev => [...receivedLogs, ...prev.filter(l => l.direction !== 'received')].sort((a,b) => b.timestamp - a.timestamp));
+    });
 
     return () => {
-        unsubscribeSent();
-        unsubscribeReceived();
+      unsubSent();
+      unsubReceived();
     };
-  }, [userId]);
+  }, [user, userData, usersCache]);
   
+  const sentCount = logs.filter(log => log.direction === 'sent').length;
+  const receivedCount = logs.filter(log => log.direction === 'received').length;
 
-  const openModal = (log = null) => {
-    setCurrentLog(log);
-    setShowModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setCurrentLog(null);
-  };
-
-  const getLoveIndex = () => {
-    if (logs.length === 0) return 50;
-    const sent = logs.filter(log => log.senderId === userId).length;
-    const received = logs.filter(log => log.recipientId === userId).length;
-    const ratio = received > 0 ? sent / received : sent;
-    const index = Math.min(100, 50 + sent * 5 - received * 2 + ratio * 5);
-    return Math.round(index);
-  };
-
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'home': return <Dashboard logs={logs} userId={userId} openModal={openModal} loveIndex={getLoveIndex()} />;
-      case 'logs': return <LoveLog logs={logs} userId={userId} openModal={openModal} />;
-      case 'challenges': return <Challenges />;
-      case 'map': return <RelationshipMap />;
-      case 'reports': return <Reports logs={logs} userId={userId} />;
-      case 'settings': return <Settings userId={userId} />;
-      default: return <Dashboard logs={logs} userId={userId} openModal={openModal} loveIndex={getLoveIndex()} />;
+  const renderPage = () => {
+    switch (page) {
+      case 'dashboard':
+        return <Dashboard sentCount={sentCount} receivedCount={receivedCount} onSendSignal={() => setIsModalOpen(true)} />;
+      case 'logs':
+        return <LoveLog logs={logs} />;
+      case 'profile':
+          return <Profile userData={userData} />;
+      default:
+        return <Dashboard sentCount={sentCount} receivedCount={receivedCount} onSendSignal={() => setIsModalOpen(true)} />;
     }
   };
 
   return (
-    <div className="bg-pink-50 min-h-screen font-sans flex flex-col">
+    <div className="bg-rose-50 min-h-screen font-sans text-gray-800 flex flex-col">
       <main className="flex-grow p-4 pb-20">
-        {renderContent()}
+        {renderPage()}
       </main>
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
-      {showModal && <LogModal closeModal={closeModal} currentLog={currentLog} userId={userId} />}
+      <SendSignalModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} currentUser={user} />
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-rose-200 flex justify-around p-2 shadow-top">
+        {['dashboard', 'logs', 'profile'].map(p => (
+          <button key={p} onClick={() => setPage(p)} className={`flex flex-col items-center justify-center w-full rounded-lg p-2 transition-colors duration-200 ${page === p ? 'bg-rose-100 text-rose-600' : 'text-gray-500 hover:bg-rose-50'}`}>
+            <Icon name={p} className="w-6 h-6 mb-1" />
+            <span className="text-xs capitalize">{p}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
-}
+};
 
-// --- Child Components ---
 
-const Dashboard = ({ logs, userId, openModal, loveIndex }) => {
-    const sentCount = logs.filter(log => log.senderId === userId).length;
-    const receivedCount = logs.filter(log => log.recipientId === userId).length;
-
+const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => {
+    const loveIndex = Math.min(100, Math.round(Math.sqrt(sentCount * 10 + receivedCount * 15)));
     return (
-        <div className="text-center">
-            <h1 className="text-2xl font-bold text-pink-600 mb-2">爱信号增强器</h1>
-            <p className="text-gray-500 mb-6">今天，你的爱指数是...</p>
-            
-            <div className="relative w-48 h-48 mx-auto mb-6">
-                <svg className="w-full h-full" viewBox="0 0 36 36">
-                    <path className="text-pink-200" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2"></path>
-                    <path className="text-pink-500" strokeDasharray={`${loveIndex}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" transform="rotate(-90 18 18)"></path>
+        <div className="flex flex-col items-center text-center">
+            <h1 className="text-2xl font-bold text-rose-800 mb-2">爱指数</h1>
+            <div className="relative w-48 h-48 flex items-center justify-center mb-6">
+                <svg className="absolute w-full h-full" viewBox="0 0 36 36">
+                    <path className="text-rose-200" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3"></path>
+                    <path className="text-rose-500 transition-all duration-1000" strokeDasharray={`${loveIndex}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"></path>
                 </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-4xl font-bold text-pink-600">{loveIndex}</span>
-                    <span className="text-sm text-gray-500">Love Index</span>
-                </div>
+                <span className="text-5xl font-bold text-rose-600">{loveIndex}</span>
             </div>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-white p-4 rounded-lg shadow">
-                    <p className="text-3xl font-bold text-pink-500">{sentCount}</p>
-                    <p className="text-gray-500">发出的爱</p>
+            <p className="text-gray-600 mb-8">今天，你感受到爱了吗？</p>
+            <button onClick={onSendSignal} className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 px-8 rounded-full shadow-lg transform hover:scale-105 transition-all duration-200">
+                发送一个爱信号
+            </button>
+            <div className="flex justify-around w-full max-w-sm mt-10">
+                <div className="text-center">
+                    <p className="text-3xl font-bold text-rose-500">{sentCount}</p>
+                    <p className="text-sm text-gray-500">已发送</p>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow">
+                <div className="text-center">
                     <p className="text-3xl font-bold text-teal-500">{receivedCount}</p>
-                    <p className="text-gray-500">收到的爱</p>
+                    <p className="text-sm text-gray-500">已接收</p>
                 </div>
             </div>
-            
-            <button onClick={() => openModal()} className="w-full bg-pink-500 text-white font-bold py-4 px-4 rounded-lg shadow-lg hover:bg-pink-600 transition-transform transform hover:scale-105 flex items-center justify-center">
-                <Icon name="send" className="w-6 h-6 mr-2" />
-                发送一个新的爱信号
-            </button>
         </div>
     );
 };
 
-const LoveLog = ({ logs, userId, openModal }) => {
-    return (
-        <div>
-            <h1 className="text-2xl font-bold text-pink-600 mb-4">爱日志</h1>
-             <div className="space-y-4">
-                {logs.map(log => (
-                    <div key={log.id} className={`p-4 rounded-lg shadow relative ${log.senderId === userId ? 'bg-pink-100' : 'bg-teal-50'}`}>
-                        <div className="flex items-start space-x-3">
-                            <div className={`p-2 rounded-full ${log.senderId === userId ? 'bg-pink-200' : 'bg-teal-100'}`}>
-                                <Icon name={log.senderId === userId ? 'send' : 'receive'} className={`w-5 h-5 ${log.senderId === userId ? 'text-pink-600' : 'text-teal-600'}`} />
-                            </div>
-                            <div>
-                                <p className="font-bold text-gray-800">
-                                    {log.senderId === userId ? `你发送给...` : `...发送给你`}
-                                </p>
-                                <p className="text-sm text-gray-500 break-all">
-                                  {log.senderId === userId ? `接收人ID: ${log.recipientId || '未知'}` : `发送人ID: ${log.senderId || '未知'}`}
-                                </p>
-                                <p className="text-gray-700 mt-2">{log.description}</p>
-                                <div className="flex items-center space-x-2 mt-2">
-                                    <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full">{log.type}</span>
-                                    <span className="text-xs text-gray-400">{new Date(log.timestamp?.toDate()).toLocaleString()}</span>
-                                </div>
-                            </div>
-                        </div>
-                         {log.senderId === userId && (
-                            <div className="absolute top-2 right-2 flex space-x-2">
-                                <button onClick={() => openModal(log)} className="p-1 text-gray-500 hover:text-blue-600"><Icon name="edit" className="w-4 h-4" /></button>
-                                <button onClick={async () => {
-                                  if (window.confirm("确定要删除这条爱信号吗?")) {
-                                    const appId = 'love-signal-app';
-                                    await deleteDoc(doc(db, "artifacts", appId, "public", "data", "signals", log.id));
-                                  }
-                                }} className="p-1 text-gray-500 hover:text-red-600"><Icon name="trash" className="w-4 h-4" /></button>
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-            {logs.length === 0 && <p className="text-center text-gray-500 mt-8">还没有任何爱信号记录，快去发送第一个吧！</p>}
-        </div>
-    );
-};
-
-const Challenges = () => (
+const LoveLog = ({ logs }) => (
     <div>
-        <h1 className="text-2xl font-bold text-pink-600 mb-4">爱行动小挑战</h1>
+        <h1 className="text-2xl font-bold text-rose-800 mb-4">爱日志</h1>
         <div className="space-y-4">
-             <div className="bg-white p-4 rounded-lg shadow flex justify-between items-center">
-                <p>给家人发一条表达感谢的短信</p>
-                <button className="text-pink-500 font-bold">完成</button>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow flex justify-between items-center">
-                <p>给同事一个真诚的赞美</p>
-                <button className="text-pink-500 font-bold">完成</button>
-            </div>
-             <div className="bg-white p-4 rounded-lg shadow flex justify-between items-center opacity-50">
-                <p>主动倾听朋友五分钟不打断</p>
-                <span className="text-gray-400">已完成</span>
-            </div>
-        </div>
-    </div>
-);
-const RelationshipMap = () => (
-     <div className="text-center text-gray-500 p-8">
-        <Icon name="map" className="w-16 h-16 mx-auto mb-4 text-pink-300" />
-        <h1 className="text-2xl font-bold text-pink-600 mb-2">关系图谱</h1>
-        <p>此功能正在建设中，敬请期待！</p>
-    </div>
-);
-
-const Reports = ({ logs, userId }) => {
-    const data = ['赞美', '倾听', '帮助', '陪伴', '礼物', '肯定', '付出'].map(type => {
-        const sent = logs.filter(log => log.senderId === userId && log.type === type).length;
-        const received = logs.filter(log => log.recipientId === userId && log.type === type).length;
-        return { name: type, sent, received };
-    });
-
-    return (
-        <div>
-            <h1 className="text-2xl font-bold text-pink-600 mb-4">个人洞察报告</h1>
-             <div className="bg-white p-4 rounded-lg shadow h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Bar dataKey="sent" fill="#ec4899" name="发出" />
-                        <Bar dataKey="received" fill="#14b8a6" name="收到" />
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-    );
-};
-
-const Settings = ({ userId }) => {
-    const [copied, setCopied] = useState(false);
-
-    const handleCopy = () => {
-        if (userId) {
-            // Use execCommand for broader compatibility within iFrames
-            const textArea = document.createElement("textarea");
-            textArea.value = userId;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-                document.execCommand('copy');
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000); // Reset after 2 seconds
-            } catch (err) {
-                console.error('Failed to copy text: ', err);
-            }
-            document.body.removeChild(textArea);
-        }
-    };
-    
-    return (
-        <div className="text-center">
-            <Icon name="user" className="w-24 h-24 mx-auto mb-4 text-pink-300 bg-white rounded-full p-4 shadow" />
-            <h1 className="text-2xl font-bold text-pink-600 mb-4">设置与个人资料</h1>
-            <div className="bg-white p-4 rounded-lg shadow-md max-w-sm mx-auto">
-                <p className="text-gray-600 mb-2">您的专属用户ID</p>
-                <div className="bg-gray-100 p-2 rounded flex items-center justify-between">
-                    <span className="text-gray-800 font-mono text-sm break-all">{userId || '加载中...'}</span>
-                    <button onClick={handleCopy} className="p-2 rounded-md hover:bg-gray-200 transition">
-                        <Icon name="copy" className="w-5 h-5 text-gray-600" />
-                    </button>
+            {logs.length > 0 ? logs.map(log => (
+                <div key={log.id} className={`p-4 rounded-lg shadow-md flex items-start space-x-4 ${log.direction === 'sent' ? 'bg-rose-100' : 'bg-teal-50'}`}>
+                    <div className={`p-2 rounded-full ${log.direction === 'sent' ? 'bg-rose-200 text-rose-600' : 'bg-teal-100 text-teal-600'}`}>
+                        <Icon name={log.direction === 'sent' ? 'send' : 'receive'} className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <p className="font-semibold">
+                            {log.direction === 'sent' ? `发给 ${log.otherPartyUsername || '...'}` : `来自 ${log.otherPartyUsername || '...'}`}
+                            <span className="ml-2 text-xs font-normal text-gray-500">{log.timestamp?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </p>
+                        <p className="text-sm text-gray-700 mt-1">{log.message}</p>
+                        <p className="text-xs text-rose-400 mt-2 font-medium bg-rose-100 px-2 py-1 rounded-full inline-block">{log.type}</p>
+                    </div>
                 </div>
-                {copied && <p className="text-green-600 text-sm mt-2">已成功复制到剪贴板！</p>}
-                 <p className="text-gray-500 text-xs mt-2">
-                    分享这个ID给您的朋友，让他们可以向您发送爱信号。
-                </p>
+            )) : <p className="text-gray-500 text-center mt-8">还没有任何记录。</p>}
+        </div>
+    </div>
+);
+
+const Profile = ({ userData }) => {
+    const handleLogout = () => {
+        signOut(auth).catch(error => console.error("Logout Error:", error));
+    };
+
+    return (
+        <div className="p-4">
+            <h1 className="text-2xl font-bold text-rose-800 mb-6 text-center">个人资料</h1>
+            <div className="bg-white p-6 rounded-xl shadow-lg flex flex-col items-center">
+                <div className="w-24 h-24 rounded-full bg-rose-200 flex items-center justify-center mb-4">
+                    <Icon name="user" className="w-12 h-12 text-rose-500" />
+                </div>
+                <h2 className="text-xl font-bold text-gray-800">@{userData?.username}</h2>
+                <p className="text-gray-500 mb-6">{userData?.email}</p>
+                <button onClick={handleLogout} className="w-full flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-4 rounded-lg transition-colors">
+                    <Icon name="logout" className="w-5 h-5 mr-2" />
+                    <span>退出登录</span>
+                </button>
             </div>
-            <button onClick={() => auth.signOut()} className="mt-8 w-full max-w-sm mx-auto bg-red-500 text-white font-bold py-3 px-4 rounded-lg shadow hover:bg-red-600 transition">
-                退出登录
-            </button>
         </div>
     );
 };
 
-const LogModal = ({ closeModal, currentLog, userId }) => {
-    const [recipientId, setRecipientId] = useState('');
-    const [description, setDescription] = useState('');
+const SendSignalModal = ({ isOpen, onClose, currentUser }) => {
+    const [recipientUsername, setRecipientUsername] = useState('');
+    const [message, setMessage] = useState('');
     const [type, setType] = useState('赞美');
-    const formRef = useRef();
-
-    useEffect(() => {
-        if (currentLog) {
-            setRecipientId(currentLog.recipientId || '');
-            setDescription(currentLog.description || '');
-            setType(currentLog.type || '赞美');
-        }
-    }, [currentLog]);
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (formRef.current && !formRef.current.contains(event.target)) {
-                closeModal();
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [closeModal]);
+    const [error, setError] = useState('');
+    const [isSending, setIsSending] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!description.trim() || !recipientId.trim()) {
-            alert("请填写接收人ID和事件描述！");
+        if (!recipientUsername || !message) {
+            setError('请填写所有字段。');
             return;
         }
+        setError('');
+        setIsSending(true);
 
-        const appId = 'love-signal-app'; // Your unique app identifier
-        const signalsCollection = collection(db, "artifacts", appId, "public", "data", "signals");
+        try {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where("username", "==", recipientUsername.toLowerCase()));
+            const querySnapshot = await getDocs(q);
 
-        const logData = {
-            senderId: userId,
-            recipientId,
-            description,
-            type,
-            timestamp: serverTimestamp(),
-        };
+            if (querySnapshot.empty) {
+                setError('未找到该用户。请检查用户名是否正确。');
+                setIsSending(false);
+                return;
+            }
 
-        if (currentLog) { // Editing existing log
-            const logRef = doc(db, "artifacts", appId, "public", "data", "signals", currentLog.id);
-            await updateDoc(logRef, logData);
-        } else { // Creating new log
-            await addDoc(signalsCollection, logData);
+            const recipientData = querySnapshot.docs[0].data();
+            const recipientId = recipientData.uid;
+
+            if (recipientId === currentUser.uid) {
+                setError('不能给自己发送信号哦。');
+                setIsSending(false);
+                return;
+            }
+
+            await addDoc(collection(db, 'signals'), {
+                senderId: currentUser.uid,
+                recipientId: recipientId,
+                message,
+                type,
+                timestamp: Timestamp.now(),
+            });
+
+            onClose();
+            setRecipientUsername('');
+            setMessage('');
+            setType('赞美');
+        } catch (err) {
+            console.error("发送信号失败:", err);
+            setError('发送失败，请稍后再试。');
+        } finally {
+            setIsSending(false);
         }
-        closeModal();
     };
-
-    const loveTypes = ['赞美', '倾听', '帮助', '陪伴', '礼物', '肯定', '付出'];
+    
+    if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div ref={formRef} className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-pink-600">{currentLog ? '编辑爱信号' : '发送爱信号'}</h2>
-                    <button onClick={closeModal}><Icon name="x" className="w-6 h-6 text-gray-500" /></button>
-                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+                <h2 className="text-xl font-bold text-rose-800 mb-4">发送爱信号</h2>
                 <form onSubmit={handleSubmit}>
                     <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="recipientId">接收人ID</label>
-                        <input id="recipientId" type="text" value={recipientId} onChange={(e) => setRecipientId(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" placeholder="粘贴朋友的用户ID" />
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="recipient">收件人用户名</label>
+                        <input id="recipient" type="text" value={recipientUsername} onChange={(e) => setRecipientUsername(e.target.value)} placeholder="@朋友的用户名" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300" />
                     </div>
                     <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="description">事件描述</label>
-                        <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" rows="3" placeholder="发生了什么？"></textarea>
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="message">信息</label>
+                        <textarea id="message" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="写下你想说的话..." className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300 h-24"></textarea>
                     </div>
                     <div className="mb-6">
-                        <label className="block text-gray-700 text-sm font-bold mb-2">爱信号类型</label>
-                        <div className="relative">
-                            <select value={type} onChange={(e) => setType(e.target.value)} className="block appearance-none w-full bg-white border border-gray-200 text-gray-700 py-3 px-4 pr-8 rounded leading-tight focus:outline-none focus:bg-white focus:border-gray-500">
-                                {loveTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                               <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                            </div>
-                        </div>
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="type">信号类型</label>
+                        <select id="type" value={type} onChange={(e) => setType(e.target.value)} className="shadow border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300">
+                            {['赞美', '倾听', '帮助', '陪伴', '礼物', '肯定', '付出'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
                     </div>
-                    <div className="flex items-center justify-end">
-                        <button type="submit" className="bg-pink-500 hover:bg-pink-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
-                            {currentLog ? '更新' : '发送'}
+                    {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
+                    <div className="flex items-center justify-between">
+                        <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">取消</button>
+                        <button type="submit" disabled={isSending} className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-rose-300">
+                            {isSending ? '发送中...' : '发送'}
                         </button>
                     </div>
                 </form>
@@ -435,27 +332,187 @@ const LogModal = ({ closeModal, currentLog, userId }) => {
     );
 };
 
-const BottomNav = ({ activeTab, setActiveTab }) => {
-    const navItems = [
-        { id: 'home', icon: 'home', label: '首页' },
-        { id: 'logs', icon: 'book', label: '日志' },
-        { id: 'challenges', icon: 'zap', label: '挑战' },
-        // { id: 'map', icon: 'map', label: '图谱' },
-        { id: 'reports', icon: 'barChart', label: '报告' },
-        { id: 'settings', icon: 'settings', label: '设置' },
-    ];
+
+// --- 认证页面组件 (登录前) ---
+const AuthPage = () => {
+    const [isLoginView, setIsLoginView] = useState(true);
+
     return (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white shadow-lg border-t border-gray-200">
-            <div className="flex justify-around max-w-lg mx-auto">
-                {navItems.map(item => (
-                    <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center justify-center w-full pt-2 pb-1 ${activeTab === item.id ? 'text-pink-600' : 'text-gray-500'}`}>
-                        <Icon name={item.icon} className="w-6 h-6 mb-1" />
-                        <span className="text-xs">{item.label}</span>
-                    </button>
-                ))}
+        <div className="min-h-screen bg-rose-50 flex flex-col justify-center items-center p-4">
+             <div className="text-center mb-8">
+                <h1 className="text-4xl font-bold text-rose-600">爱信号增强器</h1>
+                <p className="text-gray-600 mt-2">重新发现生活中的点滴温暖</p>
             </div>
-        </nav>
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+                {isLoginView ? <LoginForm /> : <SignupForm />}
+                <div className="text-center mt-6">
+                    <button onClick={() => setIsLoginView(!isLoginView)} className="text-sm text-rose-500 hover:text-rose-700 font-semibold">
+                        {isLoginView ? '还没有账户？点击注册' : '已有账户？点击登录'}
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 };
+
+const LoginForm = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setError('');
+        setIsLoading(true);
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+        } catch (err) {
+            setError('登录失败。请检查您的邮箱和密码。');
+            console.error(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">登录</h2>
+            <form onSubmit={handleLogin} className="space-y-4">
+                <div className="relative">
+                    <Icon name="mail" className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input type="email" placeholder="邮箱" value={email} onChange={e => setEmail(e.target.value)} required className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-rose-500 focus:border-rose-500"/>
+                </div>
+                <div className="relative">
+                    <Icon name="lock" className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input type="password" placeholder="密码" value={password} onChange={e => setPassword(e.target.value)} required className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-rose-500 focus:border-rose-500"/>
+                </div>
+                {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+                <button type="submit" disabled={isLoading} className="w-full bg-rose-500 text-white py-2 rounded-lg font-semibold hover:bg-rose-600 transition-colors disabled:bg-rose-300">
+                    {isLoading ? '登录中...' : '登录'}
+                </button>
+            </form>
+        </div>
+    );
+};
+
+const SignupForm = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [username, setUsername] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSignup = async (e) => {
+        e.preventDefault();
+        setError('');
+        setIsLoading(true);
+
+        if (username.length < 3) {
+            setError('用户名至少需要3个字符。');
+            setIsLoading(false);
+            return;
+        }
+        
+        const finalUsername = username.toLowerCase();
+
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('username', '==', finalUsername));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+            setError('该用户名已被使用，请换一个。');
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+            
+            await setDoc(doc(db, 'users', user.uid), { 
+                uid: user.uid, 
+                username: finalUsername, 
+                email: email 
+            });
+
+        } catch (err) {
+            if (err.code === 'auth/email-already-in-use') {
+                setError('该邮箱已被注册。');
+            } else if (err.code === 'auth/weak-password') {
+                setError('密码太弱，至少需要6个字符。');
+            } else {
+                setError('注册失败，请稍后再试。');
+            }
+            console.error(err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">注册新账户</h2>
+            <form onSubmit={handleSignup} className="space-y-4">
+                 <div className="relative">
+                    <Icon name="atSign" className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input type="text" placeholder="用户名 (独一无二)" value={username} onChange={e => setUsername(e.target.value)} required className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-rose-500 focus:border-rose-500"/>
+                </div>
+                <div className="relative">
+                    <Icon name="mail" className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input type="email" placeholder="邮箱" value={email} onChange={e => setEmail(e.target.value)} required className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-rose-500 focus:border-rose-500"/>
+                </div>
+                <div className="relative">
+                    <Icon name="lock" className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input type="password" placeholder="密码 (至少6位)" value={password} onChange={e => setPassword(e.target.value)} required className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-rose-500 focus:border-rose-500"/>
+                </div>
+                {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+                <button type="submit" disabled={isLoading} className="w-full bg-rose-500 text-white py-2 rounded-lg font-semibold hover:bg-rose-600 transition-colors disabled:bg-rose-300">
+                    {isLoading ? '创建中...' : '创建账户'}
+                </button>
+            </form>
+        </div>
+    );
+};
+
+// --- 应用根组件 ---
+function App() {
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
+             if (docSnap.exists()) {
+                setUserData(docSnap.data());
+             }
+             setUser(currentUser);
+             setIsLoading(false);
+        });
+        return () => unsubDoc();
+      } else {
+        setUser(null);
+        setUserData(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+  
+  if (isLoading) {
+    return (
+        <div className="min-h-screen bg-rose-50 flex justify-center items-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-rose-500"></div>
+        </div>
+    );
+  }
+
+  return user && userData ? <MainApp user={user} userData={userData} /> : <AuthPage />;
+}
+
+export default App;
 
 
