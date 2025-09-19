@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -19,7 +19,11 @@ import {
   getDoc,
   getDocs,
   Timestamp,
-  writeBatch
+  writeBatch,
+  serverTimestamp,
+  updateDoc,
+  deleteDoc,
+  orderBy
 } from 'firebase/firestore';
 
 // --- Firebase 配置 ---
@@ -41,24 +45,19 @@ const Icon = ({ name, className }) => {
   const icons = {
     send: <path d="M22 2 11 13 2 9l-2 9 9-2 9-9-2-9z" />,
     receive: <path d="m11 13-2 9 9-2 9-9-2-9-9 9z" />,
-    log: <path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10" />,
-    challenge: <path d="M15.5 22a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5-.5z" />,
-    map: <path d="M21 12V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7.5" />,
-    report: <path d="M2.5 2v6h6V2h-6zm15 0v6h6V2h-6zm-15 15v6h6v-6h-6zm15 0v6h6v-6h-6z" />,
-    settings: <path d="M12.22 2h-4.44L4 6v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6l-3.78-4z" />,
     plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
     x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
-    edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
-    trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
     user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
     logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
-    arrowRight: <polyline points="9 18 15 12 9 6" />,
     atSign: <><circle cx="12" cy="12" r="4"></circle><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"></path></>,
     mail: <><rect x="2" y="4" width="20" height="16" rx="2"></rect><polyline points="22,6 12,13 2,6"></polyline></>,
     lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></>,
     dashboard: <path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10" />,
     logs: <><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>,
     profile: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
+    contacts: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>,
+    search: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
+    check: <polyline points="20 6 9 17 4 12" />,
   };
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -72,43 +71,69 @@ const MainApp = ({ user, userData }) => {
   const [page, setPage] = useState('dashboard');
   const [logs, setLogs] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [usersCache, setUsersCache] = useState({});
+  const [usersCache, setUsersCache] = useState({ [user.uid]: userData });
+
+  const [contacts, setContacts] = useState([]);
+  const [incomingRequests, setIncomingRequests] = useState([]);
+  
+  const fetchUserDetails = useCallback(async (uid) => {
+    if (usersCache[uid]) return usersCache[uid];
+    const userRef = doc(db, 'users', uid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+        const fetchedUserData = userSnap.data();
+        setUsersCache(prev => ({ ...prev, [uid]: fetchedUserData }));
+        return fetchedUserData;
+    }
+    return null;
+  }, [usersCache]);
 
   useEffect(() => {
-    if (!user || !userData) return;
+    if (!user) return;
+
+    const contactsQuery = query(collection(db, 'contacts'), where('users', 'array-contains', user.uid));
+    const unsubscribe = onSnapshot(contactsQuery, async (snapshot) => {
+        const allContactsData = [];
+        const incomingReqsData = [];
+
+        for (const docSnapshot of snapshot.docs) {
+            const data = { id: docSnapshot.id, ...docSnapshot.data() };
+            const otherUserId = data.users.find(uid => uid !== user.uid);
+            if (otherUserId) {
+                const userDetails = await fetchUserDetails(otherUserId);
+                if (userDetails) {
+                    const contactWithDetails = { ...data, user: userDetails };
+                    if (data.status === 'accepted') {
+                        allContactsData.push(contactWithDetails);
+                    } else if (data.status === 'pending' && data.requesteeId === user.uid) {
+                        incomingReqsData.push(contactWithDetails);
+                    }
+                }
+            }
+        }
+        setContacts(allContactsData);
+        setIncomingRequests(incomingReqsData);
+    });
+
+    return () => unsubscribe();
+  }, [user, fetchUserDetails]);
+
+  useEffect(() => {
+    if (!user) return;
     
-    setUsersCache(prev => ({ ...prev, [user.uid]: userData }));
-
-    const sentQuery = query(collection(db, 'signals'), where('senderId', '==', user.uid));
-    const receivedQuery = query(collection(db, 'signals'), where('recipientId', '==', user.uid));
-
-    const fetchUser = async (uid) => {
-      if (usersCache[uid]) return usersCache[uid];
-      const userRef = doc(db, 'users', uid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const fetchedUserData = userSnap.data();
-        setUsersCache(prev => ({...prev, [uid]: fetchedUserData}));
-        return fetchedUserData;
-      }
-      return { username: '未知用户' };
-    };
-
+    const sentQuery = query(collection(db, 'signals'), where('senderId', '==', user.uid), orderBy('timestamp', 'desc'));
+    const receivedQuery = query(collection(db, 'signals'), where('recipientId', '==', user.uid), orderBy('timestamp', 'desc'));
+    
     const processLogs = async (snapshot, type) => {
         const newLogs = [];
         for (const docSnapshot of snapshot.docs) {
             const data = docSnapshot.data();
             const log = { id: docSnapshot.id, ...data, timestamp: data.timestamp?.toDate() };
+            const otherPartyId = type === 'sent' ? data.recipientId : data.senderId;
+            const otherPartyDetails = await fetchUserDetails(otherPartyId);
             
-            if(type === 'sent') {
-                log.direction = 'sent';
-                const recipientData = await fetchUser(data.recipientId);
-                log.otherPartyUsername = recipientData.username;
-            } else {
-                log.direction = 'received';
-                const senderData = await fetchUser(data.senderId);
-                log.otherPartyUsername = senderData.username;
-            }
+            log.direction = type;
+            log.otherPartyUsername = otherPartyDetails?.username || '未知用户';
             newLogs.push(log);
         }
         return newLogs;
@@ -117,21 +142,37 @@ const MainApp = ({ user, userData }) => {
     const unsubSent = onSnapshot(sentQuery, async (snapshot) => {
         const sentLogs = await processLogs(snapshot, 'sent');
         setLogs(prev => [...sentLogs, ...prev.filter(l => l.direction !== 'sent')].sort((a,b) => b.timestamp - a.timestamp));
-    }, (error) => console.error("Sent logs error:", error));
+    });
 
     const unsubReceived = onSnapshot(receivedQuery, async (snapshot) => {
         const receivedLogs = await processLogs(snapshot, 'received');
         setLogs(prev => [...receivedLogs, ...prev.filter(l => l.direction !== 'received')].sort((a,b) => b.timestamp - a.timestamp));
-    }, (error) => console.error("Received logs error:", error));
+    });
 
     return () => {
       unsubSent();
       unsubReceived();
     };
-  }, [user, userData]);
+  }, [user, fetchUserDetails]);
   
   const sentCount = logs.filter(log => log.direction === 'sent').length;
   const receivedCount = logs.filter(log => log.direction === 'received').length;
+
+  const handleAcceptRequest = async (requestId) => {
+    const requestRef = doc(db, 'contacts', requestId);
+    await updateDoc(requestRef, { status: 'accepted' });
+  };
+  const handleDeclineRequest = async (requestId) => {
+    const requestRef = doc(db, 'contacts', requestId);
+    await deleteDoc(requestRef);
+  };
+
+  const navItems = [
+    { key: 'dashboard', label: '仪表盘', icon: 'dashboard' },
+    { key: 'logs', label: '日志', icon: 'logs' },
+    { key: 'contacts', label: '联系人', icon: 'contacts' },
+    { key: 'profile', label: '我的', icon: 'profile' },
+  ];
 
   const renderPage = () => {
     switch (page) {
@@ -139,6 +180,8 @@ const MainApp = ({ user, userData }) => {
         return <Dashboard sentCount={sentCount} receivedCount={receivedCount} onSendSignal={() => setIsModalOpen(true)} />;
       case 'logs':
         return <LoveLog logs={logs} />;
+      case 'contacts':
+        return <ContactsPage currentUser={user} contacts={contacts} incomingRequests={incomingRequests} onAccept={handleAcceptRequest} onDecline={handleDeclineRequest} />;
       case 'profile':
           return <Profile userData={userData} />;
       default:
@@ -151,12 +194,12 @@ const MainApp = ({ user, userData }) => {
       <main className="flex-grow p-4 pb-20">
         {renderPage()}
       </main>
-      <SendSignalModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} currentUser={user} />
+      <SendSignalModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} currentUser={user} contacts={contacts} />
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-rose-200 flex justify-around p-2 shadow-top">
-        {['dashboard', 'logs', 'profile'].map(p => (
-          <button key={p} onClick={() => setPage(p)} className={`flex flex-col items-center justify-center w-full rounded-lg p-2 transition-colors duration-200 ${page === p ? 'bg-rose-100 text-rose-600' : 'text-gray-500 hover:bg-rose-50'}`}>
-            <Icon name={p} className="w-6 h-6 mb-1" />
-            <span className="text-xs capitalize">{p}</span>
+        {navItems.map(item => (
+          <button key={item.key} onClick={() => setPage(item.key)} className={`flex flex-col items-center justify-center w-full rounded-lg p-2 transition-colors duration-200 ${page === item.key ? 'bg-rose-100 text-rose-600' : 'text-gray-500 hover:bg-rose-50'}`}>
+            <Icon name={item.icon} className="w-6 h-6 mb-1" />
+            <span className="text-xs">{item.label}</span>
           </button>
         ))}
       </nav>
@@ -164,8 +207,237 @@ const MainApp = ({ user, userData }) => {
   );
 };
 
-// ... (Dashboard, LoveLog, Profile components remain the same)
-const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => {
+
+// --- 联系人页面 ---
+const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDecline }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchError, setSearchError] = useState('');
+    const [sentRequests, setSentRequests] = useState([]);
+    
+    // Fetch sent requests to disable "Add" buttons appropriately
+    useEffect(() => {
+        const q = query(collection(db, 'contacts'), where('requesterId', '==', currentUser.uid), where('status', '==', 'pending'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const reqs = snapshot.docs.map(doc => doc.data().requesteeId);
+            setSentRequests(reqs);
+        });
+        return () => unsubscribe();
+    }, [currentUser.uid]);
+
+
+    const handleSearch = async (e) => {
+        e.preventDefault();
+        if (searchQuery.length < 3) {
+            setSearchError('请输入至少3个字符进行搜索。');
+            return;
+        }
+        setIsSearching(true);
+        setSearchError('');
+        setSearchResults([]);
+
+        try {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where("username", "==", searchQuery.toLowerCase()));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) {
+                setSearchError('未找到该用户。');
+            } else {
+                const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter(user => user.uid !== currentUser.uid); // Exclude self
+                setSearchResults(results);
+            }
+        } catch (error) {
+            setSearchError('搜索失败，请稍后再试。');
+            console.error(error);
+        } finally {
+            setIsSearching(false);
+        }
+    };
+    
+    const handleSendRequest = async (recipient) => {
+        // Prevent sending request to existing contacts or self
+        if (contacts.find(c => c.user.uid === recipient.uid) || sentRequests.includes(recipient.uid)) {
+            return;
+        }
+        
+        const docId = [currentUser.uid, recipient.uid].sort().join('_');
+        const contactRef = doc(db, 'contacts', docId);
+
+        await setDoc(contactRef, {
+            users: [currentUser.uid, recipient.uid],
+            requesterId: currentUser.uid,
+            requesteeId: recipient.uid,
+            status: 'pending',
+            createdAt: serverTimestamp(),
+        });
+    };
+
+    return (
+        <div>
+            <h1 className="text-2xl font-bold text-rose-800 mb-4">联系人</h1>
+            
+            {/* 搜索 */}
+            <div className="mb-8 bg-white p-4 rounded-lg shadow-sm">
+                <h2 className="font-bold mb-2 text-gray-700">寻找朋友</h2>
+                <form onSubmit={handleSearch} className="flex space-x-2">
+                    <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="输入朋友的用户名..." className="flex-grow shadow-sm appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300"/>
+                    <button type="submit" className="bg-rose-500 hover:bg-rose-600 text-white font-bold p-2 rounded-lg" disabled={isSearching}>
+                        <Icon name="search" className="w-5 h-5"/>
+                    </button>
+                </form>
+                 {searchError && <p className="text-red-500 text-xs mt-2">{searchError}</p>}
+                 <div className="mt-4 space-y-2">
+                    {isSearching && <p className="text-gray-500 text-sm">搜索中...</p>}
+                    {searchResults.map(user => {
+                         const isContact = contacts.some(c => c.user.uid === user.uid);
+                         const isRequestSent = sentRequests.includes(user.uid);
+                         
+                         return (
+                            <div key={user.uid} className="flex items-center justify-between bg-gray-50 p-2 rounded-md">
+                                <p className="font-semibold text-gray-800">@{user.username}</p>
+                                {isContact ? (
+                                    <span className="text-sm text-green-600 font-semibold">已是联系人</span>
+                                ) : isRequestSent ? (
+                                    <span className="text-sm text-gray-500">已发送请求</span>
+                                ) : (
+                                    <button onClick={() => handleSendRequest(user)} className="bg-teal-500 hover:bg-teal-600 text-white text-sm font-bold py-1 px-3 rounded-full">
+                                        添加
+                                    </button>
+                                )}
+                            </div>
+                         );
+                    })}
+                 </div>
+            </div>
+
+            {/* 新的好友请求 */}
+            {incomingRequests.length > 0 && (
+                 <div className="mb-8">
+                    <h2 className="font-bold mb-2 text-gray-700">新的好友请求</h2>
+                    <div className="space-y-2">
+                        {incomingRequests.map(req => (
+                            <div key={req.id} className="bg-white p-3 rounded-lg shadow-sm flex items-center justify-between">
+                                <p className="font-semibold text-gray-800">@{req.user.username}</p>
+                                <div className="flex space-x-2">
+                                    <button onClick={() => onAccept(req.id)} className="bg-green-500 hover:bg-green-600 text-white p-2 rounded-full"><Icon name="check" className="w-4 h-4"/></button>
+                                    <button onClick={() => onDecline(req.id)} className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-full"><Icon name="x" className="w-4 h-4"/></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* 我的联系人 */}
+            <div>
+                 <h2 className="font-bold mb-2 text-gray-700">我的联系人</h2>
+                 <div className="space-y-2">
+                    {contacts.length > 0 ? contacts.map(contact => (
+                        <div key={contact.id} className="bg-white p-3 rounded-lg shadow-sm">
+                            <p className="font-semibold text-gray-800">@{contact.user.username}</p>
+                        </div>
+                    )) : <p className="text-gray-500 text-sm text-center mt-4">还没有联系人，快去寻找朋友吧！</p>}
+                 </div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- 发送信号模态框 (已更新) ---
+const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
+    const [recipientId, setRecipientId] = useState('');
+    const [message, setMessage] = useState('');
+    const [type, setType] = useState('赞美');
+    const [error, setError] = useState('');
+    const [isSending, setIsSending] = useState(false);
+
+    useEffect(() => {
+      // Set default recipient if contacts exist
+      if(contacts.length > 0) {
+        setRecipientId(contacts[0].user.uid);
+      } else {
+        setRecipientId('');
+      }
+    }, [contacts, isOpen]);
+
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!recipientId || !message) {
+            setError('请选择一个联系人并填写信息。');
+            return;
+        }
+        setError('');
+        setIsSending(true);
+
+        try {
+            await addDoc(collection(db, 'signals'), {
+                senderId: currentUser.uid,
+                recipientId: recipientId,
+                message,
+                type,
+                timestamp: Timestamp.now(),
+            });
+
+            onClose();
+            setMessage('');
+            setType('赞美');
+        } catch (err) {
+            console.error("发送信号失败:", err);
+            setError('发送失败，请稍后再试。');
+        } finally {
+            setIsSending(false);
+        }
+    };
+    
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+                <h2 className="text-xl font-bold text-rose-800 mb-4">发送爱信号</h2>
+                <form onSubmit={handleSubmit}>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="recipient">选择联系人</label>
+                         <select id="recipient" value={recipientId} onChange={(e) => setRecipientId(e.target.value)} className="shadow border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300">
+                           {contacts.length > 0 ? (
+                             contacts.map(c => <option key={c.user.uid} value={c.user.uid}>@{c.user.username}</option>)
+                           ) : (
+                             <option disabled value="">请先添加联系人</option>
+                           )}
+                        </select>
+                    </div>
+                    {/* ... (其他表单字段不变) ... */}
+                    <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="message">信息</label>
+                        <textarea id="message" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="写下你想说的话..." className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300 h-24"></textarea>
+                    </div>
+                    <div className="mb-6">
+                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="type">信号类型</label>
+                        <select id="type" value={type} onChange={(e) => setType(e.target.value)} className="shadow border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300">
+                            {['赞美', '倾听', '帮助', '陪伴', '礼物', '肯定', '付出'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </div>
+                    {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
+                    <div className="flex items-center justify-between">
+                        <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">取消</button>
+                        <button type="submit" disabled={isSending || contacts.length === 0} className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-rose-300">
+                            {isSending ? '发送中...' : '发送'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+
+// --- 保持不变的组件 ---
+const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => { /* ... 内容无变化 ... */ 
     const loveIndex = Math.min(100, Math.round(Math.sqrt(sentCount * 10 + receivedCount * 15)));
     return (
         <div className="flex flex-col items-center text-center">
@@ -194,31 +466,31 @@ const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => {
         </div>
     );
 };
-
-const LoveLog = ({ logs }) => (
-    <div>
-        <h1 className="text-2xl font-bold text-rose-800 mb-4">爱日志</h1>
-        <div className="space-y-4">
-            {logs.length > 0 ? logs.map(log => (
-                <div key={log.id} className={`p-4 rounded-lg shadow-md flex items-start space-x-4 ${log.direction === 'sent' ? 'bg-rose-100' : 'bg-teal-50'}`}>
-                    <div className={`p-2 rounded-full ${log.direction === 'sent' ? 'bg-rose-200 text-rose-600' : 'bg-teal-100 text-teal-600'}`}>
-                        <Icon name={log.direction === 'sent' ? 'send' : 'receive'} className="w-5 h-5" />
+const LoveLog = ({ logs }) => { /* ... 内容无变化 ... */ 
+    return (
+        <div>
+            <h1 className="text-2xl font-bold text-rose-800 mb-4">爱日志</h1>
+            <div className="space-y-4">
+                {logs.length > 0 ? logs.map(log => (
+                    <div key={log.id} className={`p-4 rounded-lg shadow-md flex items-start space-x-4 ${log.direction === 'sent' ? 'bg-rose-100' : 'bg-teal-50'}`}>
+                        <div className={`p-2 rounded-full ${log.direction === 'sent' ? 'bg-rose-200 text-rose-600' : 'bg-teal-100 text-teal-600'}`}>
+                            <Icon name={log.direction === 'sent' ? 'send' : 'receive'} className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="font-semibold">
+                                {log.direction === 'sent' ? `发给 ${log.otherPartyUsername || '...'}` : `来自 ${log.otherPartyUsername || '...'}`}
+                                <span className="ml-2 text-xs font-normal text-gray-500">{log.timestamp?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            </p>
+                            <p className="text-sm text-gray-700 mt-1">{log.message}</p>
+                            <p className="text-xs text-rose-400 mt-2 font-medium bg-rose-100 px-2 py-1 rounded-full inline-block">{log.type}</p>
+                        </div>
                     </div>
-                    <div>
-                        <p className="font-semibold">
-                            {log.direction === 'sent' ? `发给 ${log.otherPartyUsername || '...'}` : `来自 ${log.otherPartyUsername || '...'}`}
-                            <span className="ml-2 text-xs font-normal text-gray-500">{log.timestamp?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </p>
-                        <p className="text-sm text-gray-700 mt-1">{log.message}</p>
-                        <p className="text-xs text-rose-400 mt-2 font-medium bg-rose-100 px-2 py-1 rounded-full inline-block">{log.type}</p>
-                    </div>
-                </div>
-            )) : <p className="text-gray-500 text-center mt-8">还没有任何记录。</p>}
+                )) : <p className="text-gray-500 text-center mt-8">还没有任何记录。</p>}
+            </div>
         </div>
-    </div>
-);
-
-const Profile = ({ userData }) => {
+    );
+};
+const Profile = ({ userData }) => { /* ... 内容无变化 ... */ 
     const handleLogout = () => {
         signOut(auth).catch(error => console.error("Logout Error:", error));
     };
@@ -240,101 +512,7 @@ const Profile = ({ userData }) => {
         </div>
     );
 };
-
-
-const SendSignalModal = ({ isOpen, onClose, currentUser }) => {
-    const [recipientUsername, setRecipientUsername] = useState('');
-    const [message, setMessage] = useState('');
-    const [type, setType] = useState('赞美');
-    const [error, setError] = useState('');
-    const [isSending, setIsSending] = useState(false);
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!recipientUsername || !message) {
-            setError('请填写所有字段。');
-            return;
-        }
-        setError('');
-        setIsSending(true);
-
-        try {
-            const usersRef = collection(db, 'users');
-            const q = query(usersRef, where("username", "==", recipientUsername.toLowerCase()));
-            const querySnapshot = await getDocs(q);
-
-            if (querySnapshot.empty) {
-                setError('未找到该用户。请检查用户名是否正确。');
-                setIsSending(false);
-                return;
-            }
-
-            const recipientData = querySnapshot.docs[0].data();
-            const recipientId = recipientData.uid;
-
-            if (recipientId === currentUser.uid) {
-                setError('不能给自己发送信号哦。');
-                setIsSending(false);
-                return;
-            }
-
-            await addDoc(collection(db, 'signals'), {
-                senderId: currentUser.uid,
-                recipientId: recipientId,
-                message,
-                type,
-                timestamp: Timestamp.now(),
-            });
-
-            onClose();
-            setRecipientUsername('');
-            setMessage('');
-            setType('赞美');
-        } catch (err) {
-            console.error("发送信号失败:", err);
-            setError('发送失败，请稍后再试。');
-        } finally {
-            setIsSending(false);
-        }
-    };
-    
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-                <h2 className="text-xl font-bold text-rose-800 mb-4">发送爱信号</h2>
-                <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="recipient">收件人用户名</label>
-                        <input id="recipient" type="text" value={recipientUsername} onChange={(e) => setRecipientUsername(e.target.value)} placeholder="@朋友的用户名" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300" />
-                    </div>
-                    <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="message">信息</label>
-                        <textarea id="message" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="写下你想说的话..." className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300 h-24"></textarea>
-                    </div>
-                    <div className="mb-6">
-                        <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="type">信号类型</label>
-                        <select id="type" value={type} onChange={(e) => setType(e.target.value)} className="shadow border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300">
-                            {['赞美', '倾听', '帮助', '陪伴', '礼物', '肯定', '付出'].map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                    </div>
-                    {error && <p className="text-red-500 text-xs italic mb-4">{error}</p>}
-                    <div className="flex items-center justify-between">
-                        <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">取消</button>
-                        <button type="submit" disabled={isSending} className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-rose-300">
-                            {isSending ? '发送中...' : '发送'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-};
-
-
-// --- 认证页面组件 (登录前) ---
-const AuthPage = () => {
+const AuthPage = () => { /* ... 内容无变化 ... */ 
     const [isLoginView, setIsLoginView] = useState(true);
 
     return (
@@ -354,8 +532,7 @@ const AuthPage = () => {
         </div>
     );
 };
-
-const LoginForm = () => {
+const LoginForm = () => { /* ... 内容无变化 ... */ 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -395,8 +572,7 @@ const LoginForm = () => {
         </div>
     );
 };
-
-const SignupForm = () => {
+const SignupForm = () => { /* ... 内容无变化 ... */ 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [username, setUsername] = useState('');
@@ -416,7 +592,6 @@ const SignupForm = () => {
         
         const finalUsername = username.toLowerCase();
 
-        // Use a more secure and efficient way to check for username uniqueness
         const usernameDocRef = doc(db, "usernames", finalUsername);
         const usernameDoc = await getDoc(usernameDocRef);
         if (usernameDoc.exists()) {
@@ -429,7 +604,6 @@ const SignupForm = () => {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
             
-            // Use a batch write for atomic operation
             const batch = writeBatch(db);
 
             const userDocRef = doc(db, 'users', user.uid);
@@ -482,9 +656,7 @@ const SignupForm = () => {
         </div>
     );
 };
-
-// --- 应用根组件 ---
-function App() {
+const App = () => { /* ... 内容无变化 ... */ 
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -503,7 +675,7 @@ function App() {
              setIsLoading(false);
         }, (error) => {
             console.error("Error fetching user data:", error);
-            setIsLoading(false); // Stop loading even if there's an error
+            setIsLoading(false);
         });
         return () => unsubDoc();
       } else {
@@ -525,7 +697,7 @@ function App() {
   }
 
   return user && userData ? <MainApp user={user} userData={userData} /> : <AuthPage />;
-}
+};
 
 export default App;
 
