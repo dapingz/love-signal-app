@@ -216,7 +216,6 @@ const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDec
     const [searchError, setSearchError] = useState('');
     const [sentRequests, setSentRequests] = useState([]);
     
-    // Fetch sent requests to disable "Add" buttons appropriately
     useEffect(() => {
         const q = query(collection(db, 'contacts'), where('requesterId', '==', currentUser.uid), where('status', '==', 'pending'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -246,7 +245,7 @@ const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDec
                 setSearchError('未找到该用户。');
             } else {
                 const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-                    .filter(user => user.uid !== currentUser.uid); // Exclude self
+                    .filter(user => user.uid !== currentUser.uid);
                 setSearchResults(results);
             }
         } catch (error) {
@@ -258,28 +257,39 @@ const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDec
     };
     
     const handleSendRequest = async (recipient) => {
-        // Prevent sending request to existing contacts or self
-        if (contacts.find(c => c.user.uid === recipient.uid) || sentRequests.includes(recipient.uid)) {
+        const recipientId = recipient.uid;
+        if (contacts.find(c => c.user.uid === recipientId) || sentRequests.includes(recipientId)) {
             return;
         }
         
-        const docId = [currentUser.uid, recipient.uid].sort().join('_');
+        // Optimistic UI update
+        setSentRequests(prev => [...prev, recipientId]);
+
+        const docId = [currentUser.uid, recipientId].sort().join('_');
         const contactRef = doc(db, 'contacts', docId);
 
-        await setDoc(contactRef, {
-            users: [currentUser.uid, recipient.uid],
-            requesterId: currentUser.uid,
-            requesteeId: recipient.uid,
-            status: 'pending',
-            createdAt: serverTimestamp(),
-        });
+        try {
+            await setDoc(contactRef, {
+                users: [currentUser.uid, recipientId],
+                requesterId: currentUser.uid,
+                requesteeId: recipientId,
+                status: 'pending',
+                createdAt: serverTimestamp(),
+            });
+        } catch (error) {
+            console.error("发送好友请求失败:", error);
+            // Revert optimistic update on failure
+            setSentRequests(prev => prev.filter(id => id !== recipientId));
+            // A simple alert is better than nothing for now
+            // In a real app, you might use a toast notification library
+            window.alert("发送好友请求失败，请检查您的网络连接或稍后再试。这很可能是因为您还未更新Firestore安全规则。");
+        }
     };
 
     return (
         <div>
             <h1 className="text-2xl font-bold text-rose-800 mb-4">联系人</h1>
             
-            {/* 搜索 */}
             <div className="mb-8 bg-white p-4 rounded-lg shadow-sm">
                 <h2 className="font-bold mb-2 text-gray-700">寻找朋友</h2>
                 <form onSubmit={handleSearch} className="flex space-x-2">
@@ -313,7 +323,6 @@ const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDec
                  </div>
             </div>
 
-            {/* 新的好友请求 */}
             {incomingRequests.length > 0 && (
                  <div className="mb-8">
                     <h2 className="font-bold mb-2 text-gray-700">新的好友请求</h2>
@@ -331,7 +340,6 @@ const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDec
                 </div>
             )}
 
-            {/* 我的联系人 */}
             <div>
                  <h2 className="font-bold mb-2 text-gray-700">我的联系人</h2>
                  <div className="space-y-2">
@@ -356,7 +364,6 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
     const [isSending, setIsSending] = useState(false);
 
     useEffect(() => {
-      // Set default recipient if contacts exist
       if(contacts.length > 0) {
         setRecipientId(contacts[0].user.uid);
       } else {
