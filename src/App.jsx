@@ -18,7 +18,6 @@ import {
   setDoc, 
   getDoc,
   getDocs,
-  Timestamp,
   writeBatch,
   serverTimestamp,
   updateDoc,
@@ -262,7 +261,6 @@ const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDec
             return;
         }
         
-        // Optimistic UI update
         setSentRequests(prev => [...prev, recipientId]);
 
         const docId = [currentUser.uid, recipientId].sort().join('_');
@@ -278,11 +276,8 @@ const ContactsPage = ({ currentUser, contacts, incomingRequests, onAccept, onDec
             });
         } catch (error) {
             console.error("发送好友请求失败:", error);
-            // Revert optimistic update on failure
             setSentRequests(prev => prev.filter(id => id !== recipientId));
-            // A simple alert is better than nothing for now
-            // In a real app, you might use a toast notification library
-            window.alert("发送好友请求失败，请检查您的网络连接或稍后再试。这很可能是因为您还未更新Firestore安全规则。");
+            alert("发送好友请求失败，请检查您的网络连接或稍后再试。这很可能是因为您还未更新Firestore安全规则。");
         }
     };
 
@@ -387,7 +382,7 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
                 recipientId: recipientId,
                 message,
                 type,
-                timestamp: Timestamp.now(),
+                timestamp: serverTimestamp(), // 使用服务器时间
             });
 
             onClose();
@@ -396,6 +391,8 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
         } catch (err) {
             console.error("发送信号失败:", err);
             setError('发送失败，请稍后再试。');
+            // 增加明确的弹窗提示
+            window.alert(`发送信号失败！这很可能是因为您还未更新最新的Firestore安全规则。\n\n错误详情: ${err.message}`);
         } finally {
             setIsSending(false);
         }
@@ -418,7 +415,6 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
                            )}
                         </select>
                     </div>
-                    {/* ... (其他表单字段不变) ... */}
                     <div className="mb-4">
                         <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="message">信息</label>
                         <textarea id="message" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="写下你想说的话..." className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:ring-2 focus:ring-rose-300 h-24"></textarea>
