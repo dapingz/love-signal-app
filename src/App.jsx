@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -16,13 +16,13 @@ import {
   onSnapshot, 
   doc, 
   setDoc, 
+  getDoc,
   getDocs,
   Timestamp,
   writeBatch
 } from 'firebase/firestore';
 
 // --- Firebase 配置 ---
-// 注意：这些值将在Vercel的环境变量中被替换
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -75,7 +75,7 @@ const MainApp = ({ user, userData }) => {
   const [usersCache, setUsersCache] = useState({});
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !userData) return;
     
     setUsersCache(prev => ({ ...prev, [user.uid]: userData }));
 
@@ -87,18 +87,18 @@ const MainApp = ({ user, userData }) => {
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef);
       if (userSnap.exists()) {
-        const userData = userSnap.data();
-        setUsersCache(prev => ({...prev, [uid]: userData}));
-        return userData;
+        const fetchedUserData = userSnap.data();
+        setUsersCache(prev => ({...prev, [uid]: fetchedUserData}));
+        return fetchedUserData;
       }
       return { username: '未知用户' };
     };
 
     const processLogs = async (snapshot, type) => {
         const newLogs = [];
-        for (const doc of snapshot.docs) {
-            const data = doc.data();
-            const log = { id: doc.id, ...data, timestamp: data.timestamp?.toDate() };
+        for (const docSnapshot of snapshot.docs) {
+            const data = docSnapshot.data();
+            const log = { id: docSnapshot.id, ...data, timestamp: data.timestamp?.toDate() };
             
             if(type === 'sent') {
                 log.direction = 'sent';
@@ -114,22 +114,21 @@ const MainApp = ({ user, userData }) => {
         return newLogs;
     };
 
-
     const unsubSent = onSnapshot(sentQuery, async (snapshot) => {
         const sentLogs = await processLogs(snapshot, 'sent');
         setLogs(prev => [...sentLogs, ...prev.filter(l => l.direction !== 'sent')].sort((a,b) => b.timestamp - a.timestamp));
-    });
+    }, (error) => console.error("Sent logs error:", error));
 
     const unsubReceived = onSnapshot(receivedQuery, async (snapshot) => {
         const receivedLogs = await processLogs(snapshot, 'received');
         setLogs(prev => [...receivedLogs, ...prev.filter(l => l.direction !== 'received')].sort((a,b) => b.timestamp - a.timestamp));
-    });
+    }, (error) => console.error("Received logs error:", error));
 
     return () => {
       unsubSent();
       unsubReceived();
     };
-  }, [user, userData, usersCache]);
+  }, [user, userData]);
   
   const sentCount = logs.filter(log => log.direction === 'sent').length;
   const receivedCount = logs.filter(log => log.direction === 'received').length;
@@ -165,7 +164,7 @@ const MainApp = ({ user, userData }) => {
   );
 };
 
-
+// ... (Dashboard, LoveLog, Profile components remain the same)
 const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => {
     const loveIndex = Math.min(100, Math.round(Math.sqrt(sentCount * 10 + receivedCount * 15)));
     return (
@@ -242,6 +241,7 @@ const Profile = ({ userData }) => {
     );
 };
 
+
 const SendSignalModal = ({ isOpen, onClose, currentUser }) => {
     const [recipientUsername, setRecipientUsername] = useState('');
     const [message, setMessage] = useState('');
@@ -301,7 +301,7 @@ const SendSignalModal = ({ isOpen, onClose, currentUser }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={onClose}>
             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
                 <h2 className="text-xl font-bold text-rose-800 mb-4">发送爱信号</h2>
                 <form onSubmit={handleSubmit}>
@@ -416,10 +416,10 @@ const SignupForm = () => {
         
         const finalUsername = username.toLowerCase();
 
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('username', '==', finalUsername));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
+        // Use a more secure and efficient way to check for username uniqueness
+        const usernameDocRef = doc(db, "usernames", finalUsername);
+        const usernameDoc = await getDoc(usernameDocRef);
+        if (usernameDoc.exists()) {
             setError('该用户名已被使用，请换一个。');
             setIsLoading(false);
             return;
@@ -429,11 +429,20 @@ const SignupForm = () => {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
             
-            await setDoc(doc(db, 'users', user.uid), { 
+            // Use a batch write for atomic operation
+            const batch = writeBatch(db);
+
+            const userDocRef = doc(db, 'users', user.uid);
+            batch.set(userDocRef, { 
                 uid: user.uid, 
                 username: finalUsername, 
                 email: email 
             });
+
+            const newUsernameDocRef = doc(db, "usernames", finalUsername);
+            batch.set(newUsernameDocRef, { uid: user.uid });
+            
+            await batch.commit();
 
         } catch (err) {
             if (err.code === 'auth/email-already-in-use') {
@@ -481,15 +490,20 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         const userDocRef = doc(db, 'users', currentUser.uid);
         const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
              if (docSnap.exists()) {
                 setUserData(docSnap.data());
+             } else {
+                console.log("User document doesn't exist yet.");
              }
              setUser(currentUser);
              setIsLoading(false);
+        }, (error) => {
+            console.error("Error fetching user data:", error);
+            setIsLoading(false); // Stop loading even if there's an error
         });
         return () => unsubDoc();
       } else {
@@ -514,5 +528,4 @@ function App() {
 }
 
 export default App;
-
 
