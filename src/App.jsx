@@ -392,7 +392,7 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
             console.error("发送信号失败:", err);
             setError('发送失败，请稍后再试。');
             // 增加明确的弹窗提示
-            window.alert(`发送信号失败！这很可能是因为您还未更新最新的Firestore安全规则。\n\n错误详情: ${err.message}`);
+            alert(`发送信号失败！这很可能是因为您还未更新最新的Firestore安全规则。\n\n错误详情: ${err.message}`);
         } finally {
             setIsSending(false);
         }
