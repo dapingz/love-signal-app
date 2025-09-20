@@ -65,53 +65,19 @@ const Icon = ({ name, className }) => {
   );
 };
 
-// --- 全新：爱心链画片组件 ---
-const LoveChainIllustration = ({ className }) => (
-    <div className={`my-6 flex justify-center ${className}`}>
-        <svg viewBox="0 0 120 60" className="w-48 h-auto">
-            <style>
-                {`
-                    .love-chain-path { stroke-dasharray: 100; stroke-dashoffset: 100; animation: draw 2s ease-in-out forwards; }
-                    .love-chain-heart { transform-origin: center; animation: heartbeat 1.5s ease-in-out infinite; }
-                    @keyframes draw { to { stroke-dashoffset: 0; } }
-                    @keyframes heartbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
-                `}
-            </style>
-            
-            {/* <!-- 第一个人物 --> */}
-            <g transform="translate(10, 10)">
-                <path d="M10,40 C10,30 20,30 20,40" stroke="#4A5568" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0s'}} />
-                <circle cx="15" cy="20" r="8" stroke="#4A5568" fill="white" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.2s'}}/>
-                <circle cx="12" cy="20" r="1" fill="#4A5568"/>
-                <circle cx="18" cy="20" r="1" fill="#4A5568"/>
-                <path d="M12,24 Q15,28 18,24" stroke="#E53E3E" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.4s'}}/>
-                <path d="M5,25 Q15,-10 25,25" stroke="#4A5568" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.6s'}}/>
-                <path d="M15,5 Q10,0 5,5 C0,10 10,15 15,20 C20,15 30,10 25,5 Q20,0 15,5" fill="#EF4444" className="love-chain-heart" style={{animationDelay: '0s'}}/>
-            </g>
-
-            {/* <!-- 第二个人物 --> */}
-            <g transform="translate(45, 10)">
-                <path d="M10,40 C10,30 20,30 20,40" stroke="#4A5568" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.1s'}}/>
-                <circle cx="15" cy="20" r="8" stroke="#4A5568" fill="white" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.3s'}}/>
-                <circle cx="12" cy="20" r="1" fill="#4A5568"/>
-                <circle cx="18" cy="20" r="1" fill="#4A5568"/>
-                <path d="M13,24 C15,26 17,24" stroke="#E53E3E" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.5s'}}/>
-                <path d="M5,25 Q15,-10 25,25" stroke="#4A5568" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.7s'}}/>
-                <path d="M15,5 Q10,0 5,5 C0,10 10,15 15,20 C20,15 30,10 25,5 Q20,0 15,5" fill="#EC4899" className="love-chain-heart" style={{animationDelay: '0.5s'}}/>
-            </g>
-
-            {/* <!-- 第三个人物 --> */}
-            <g transform="translate(80, 10)">
-                <path d="M10,40 C10,30 20,30 20,40" stroke="#4A5568" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.2s'}}/>
-                <circle cx="15" cy="20" r="8" stroke="#4A5568" fill="white" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.4s'}}/>
-                <circle cx="12" cy="20" r="1" fill="#4A5568"/>
-                <circle cx="18" cy="20" r="1" fill="#4A5568"/>
-                <path d="M13,24 C15,26 17,24" stroke="#E53E3E" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.6s'}}/>
-                <path d="M5,25 Q15,-10 25,25" stroke="#4A5568" fill="none" strokeWidth="1" className="love-chain-path" style={{animationDelay: '0.8s'}}/>
-                <path d="M15,5 Q10,0 5,5 C0,10 10,15 15,20 C20,15 30,10 25,5 Q20,0 15,5" fill="#F97316" className="love-chain-heart" style={{animationDelay: '1s'}}/>
-            </g>
+// --- 新增：温馨可爱的画片组件 ---
+const HeartIllustration = ({ className }) => (
+  <div className={`my-8 flex justify-center ${className}`}>
+    <div className="relative w-32 h-32">
+      <div className="absolute inset-0 bg-rose-200 rounded-full opacity-30 animate-ping"></div>
+      <div className="absolute inset-2 bg-rose-200 rounded-full opacity-50 animate-ping" style={{ animationDelay: '0.5s' }}></div>
+      <div className="relative flex items-center justify-center w-full h-full">
+        <svg width="80" height="80" viewBox="0 0 24 24" className="text-rose-500">
+          <path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
         </svg>
+      </div>
     </div>
+  </div>
 );
 
 
@@ -170,9 +136,9 @@ const MainApp = ({ user, userData }) => {
   useEffect(() => {
     if (!user) return;
     
-    // 恢复 orderBy 以利用数据库索引
-    const sentQuery = query(collection(db, 'signals'), where('senderId', '==', user.uid), orderBy('timestamp', 'desc'));
-    const receivedQuery = query(collection(db, 'signals'), where('recipientId', '==', user.uid), orderBy('timestamp', 'desc'));
+    // **诊断性修改：暂时移除 orderBy 以测试核心功能**
+    const sentQuery = query(collection(db, 'signals'), where('senderId', '==', user.uid));
+    const receivedQuery = query(collection(db, 'signals'), where('recipientId', '==', user.uid));
     
     const processLogs = async (snapshot, type) => {
         const newLogs = [];
@@ -191,6 +157,7 @@ const MainApp = ({ user, userData }) => {
 
     const unsubSent = onSnapshot(sentQuery, async (snapshot) => {
         const sentLogs = await processLogs(snapshot, 'sent');
+        // 注意：这里的排序是在前端完成的，可能会因为数据量大而变慢，但用于诊断足够
         setLogs(prev => [...sentLogs, ...prev.filter(l => l.direction !== 'sent')].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0)));
     });
 
@@ -443,7 +410,7 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
             console.error("发送信号失败:", err);
             setError('发送失败，请稍后再试。');
             // 增加明确的弹窗提示
-            alert(`发送信号失败！这很可能是因为您还未更新最新的Firestore安全规则。\n\n错误详情: ${err.message}`);
+            alert(`发送信号失败！\n\n这几乎可以肯定是由于数据库索引尚未完全生成所致。请在Firebase控制台的“Indexes”页面等待几分钟，直到索引状态变为“Enabled”，然后刷新App重试。\n\n错误详情: ${err.message}`);
         } finally {
             setIsSending(false);
         }
@@ -496,14 +463,14 @@ const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => {
     return (
         <div className="flex flex-col items-center text-center">
             <h1 className="text-2xl font-bold text-rose-800 mb-2">爱指数</h1>
-            <LoveChainIllustration className="-mt-4 -mb-2"/>
-            <div className="relative w-40 h-40 flex items-center justify-center mb-6">
+            <div className="relative w-48 h-48 flex items-center justify-center mb-6">
                 <svg className="absolute w-full h-full" viewBox="0 0 36 36">
-                    <path className="text-rose-200" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2"></path>
-                    <path className="text-rose-500 transition-all duration-1000" strokeDasharray={`${loveIndex}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"></path>
+                    <path className="text-rose-200" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3"></path>
+                    <path className="text-rose-500 transition-all duration-1000" strokeDasharray={`${loveIndex}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"></path>
                 </svg>
                 <span className="text-5xl font-bold text-rose-600">{loveIndex}</span>
             </div>
+            <HeartIllustration className="my-2" />
             <p className="text-gray-600 mb-8">今天，你感受到爱了吗？</p>
             <button onClick={onSendSignal} className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 px-8 rounded-full shadow-lg transform hover:scale-105 transition-all duration-200">
                 发送一个爱信号
@@ -573,10 +540,10 @@ const AuthPage = () => {
     return (
         <div className="min-h-screen bg-rose-50 flex flex-col justify-center items-center p-4">
              <div className="text-center">
-                <h1 className="text-4xl font-bold text-rose-600" style={{fontFamily:"'Comic Sans MS', cursive, sans-serif"}}>爱心链</h1>
+                <h1 className="text-4xl font-bold text-rose-600">爱心链</h1>
                 <p className="text-gray-600 mt-2">重新发现生活中的点滴温暖</p>
             </div>
-            <LoveChainIllustration />
+            <HeartIllustration />
             <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
                 {isLoginView ? <LoginForm /> : <SignupForm />}
                 <div className="text-center mt-6">
