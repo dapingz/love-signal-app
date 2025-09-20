@@ -120,8 +120,9 @@ const MainApp = ({ user, userData }) => {
   useEffect(() => {
     if (!user) return;
     
-    const sentQuery = query(collection(db, 'signals'), where('senderId', '==', user.uid), orderBy('timestamp', 'desc'));
-    const receivedQuery = query(collection(db, 'signals'), where('recipientId', '==', user.uid), orderBy('timestamp', 'desc'));
+    // **诊断性修改：暂时移除 orderBy 以测试核心功能**
+    const sentQuery = query(collection(db, 'signals'), where('senderId', '==', user.uid));
+    const receivedQuery = query(collection(db, 'signals'), where('recipientId', '==', user.uid));
     
     const processLogs = async (snapshot, type) => {
         const newLogs = [];
@@ -140,12 +141,13 @@ const MainApp = ({ user, userData }) => {
 
     const unsubSent = onSnapshot(sentQuery, async (snapshot) => {
         const sentLogs = await processLogs(snapshot, 'sent');
-        setLogs(prev => [...sentLogs, ...prev.filter(l => l.direction !== 'sent')].sort((a,b) => b.timestamp - a.timestamp));
+        // 注意：这里的排序是在前端完成的，可能会因为数据量大而变慢，但用于诊断足够
+        setLogs(prev => [...sentLogs, ...prev.filter(l => l.direction !== 'sent')].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0)));
     });
 
     const unsubReceived = onSnapshot(receivedQuery, async (snapshot) => {
         const receivedLogs = await processLogs(snapshot, 'received');
-        setLogs(prev => [...receivedLogs, ...prev.filter(l => l.direction !== 'received')].sort((a,b) => b.timestamp - a.timestamp));
+        setLogs(prev => [...receivedLogs, ...prev.filter(l => l.direction !== 'received')].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0)));
     });
 
     return () => {
@@ -392,7 +394,7 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
             console.error("发送信号失败:", err);
             setError('发送失败，请稍后再试。');
             // 增加明确的弹窗提示
-            alert(`发送信号失败！这很可能是因为您还未更新最新的Firestore安全规则。\n\n错误详情: ${err.message}`);
+            alert(`发送信号失败！\n\n这几乎可以肯定是由于数据库索引尚未完全生成所致。请在Firebase控制台的“Indexes”页面等待几分钟，直到索引状态变为“Enabled”，然后刷新App重试。\n\n错误详情: ${err.message}`);
         } finally {
             setIsSending(false);
         }
