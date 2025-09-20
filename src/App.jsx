@@ -65,6 +65,22 @@ const Icon = ({ name, className }) => {
   );
 };
 
+// --- 新增：温馨可爱的画片组件 ---
+const HeartIllustration = ({ className }) => (
+  <div className={`my-8 flex justify-center ${className}`}>
+    <div className="relative w-32 h-32">
+      <div className="absolute inset-0 bg-rose-200 rounded-full opacity-30 animate-ping"></div>
+      <div className="absolute inset-2 bg-rose-200 rounded-full opacity-50 animate-ping" style={{ animationDelay: '0.5s' }}></div>
+      <div className="relative flex items-center justify-center w-full h-full">
+        <svg width="80" height="80" viewBox="0 0 24 24" className="text-rose-500">
+          <path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+);
+
+
 // --- 主应用组件 (登录后) ---
 const MainApp = ({ user, userData }) => {
   const [page, setPage] = useState('dashboard');
@@ -442,7 +458,7 @@ const SendSignalModal = ({ isOpen, onClose, currentUser, contacts }) => {
 
 
 // --- 保持不变的组件 ---
-const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => { /* ... 内容无变化 ... */ 
+const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => {
     const loveIndex = Math.min(100, Math.round(Math.sqrt(sentCount * 10 + receivedCount * 15)));
     return (
         <div className="flex flex-col items-center text-center">
@@ -454,6 +470,7 @@ const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => { /* ... 内�
                 </svg>
                 <span className="text-5xl font-bold text-rose-600">{loveIndex}</span>
             </div>
+            <HeartIllustration className="my-2" />
             <p className="text-gray-600 mb-8">今天，你感受到爱了吗？</p>
             <button onClick={onSendSignal} className="bg-rose-500 hover:bg-rose-600 text-white font-bold py-4 px-8 rounded-full shadow-lg transform hover:scale-105 transition-all duration-200">
                 发送一个爱信号
@@ -471,7 +488,7 @@ const Dashboard = ({ sentCount, receivedCount, onSendSignal }) => { /* ... 内�
         </div>
     );
 };
-const LoveLog = ({ logs }) => { /* ... 内容无变化 ... */ 
+const LoveLog = ({ logs }) => { 
     return (
         <div>
             <h1 className="text-2xl font-bold text-rose-800 mb-4">爱日志</h1>
@@ -495,7 +512,7 @@ const LoveLog = ({ logs }) => { /* ... 内容无变化 ... */
         </div>
     );
 };
-const Profile = ({ userData }) => { /* ... 内容无变化 ... */ 
+const Profile = ({ userData }) => {
     const handleLogout = () => {
         signOut(auth).catch(error => console.error("Logout Error:", error));
     };
@@ -517,15 +534,16 @@ const Profile = ({ userData }) => { /* ... 内容无变化 ... */
         </div>
     );
 };
-const AuthPage = () => { /* ... 内容无变化 ... */ 
+const AuthPage = () => {
     const [isLoginView, setIsLoginView] = useState(true);
 
     return (
         <div className="min-h-screen bg-rose-50 flex flex-col justify-center items-center p-4">
-             <div className="text-center mb-8">
-                <h1 className="text-4xl font-bold text-rose-600">爱信号增强器</h1>
+             <div className="text-center">
+                <h1 className="text-4xl font-bold text-rose-600">爱心链</h1>
                 <p className="text-gray-600 mt-2">重新发现生活中的点滴温暖</p>
             </div>
+            <HeartIllustration />
             <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
                 {isLoginView ? <LoginForm /> : <SignupForm />}
                 <div className="text-center mt-6">
@@ -537,7 +555,7 @@ const AuthPage = () => { /* ... 内容无变化 ... */
         </div>
     );
 };
-const LoginForm = () => { /* ... 内容无变化 ... */ 
+const LoginForm = () => { 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -577,7 +595,7 @@ const LoginForm = () => { /* ... 内容无变化 ... */
         </div>
     );
 };
-const SignupForm = () => { /* ... 内容无变化 ... */ 
+const SignupForm = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [username, setUsername] = useState('');
@@ -630,6 +648,7 @@ const SignupForm = () => { /* ... 内容无变化 ... */
                 setError('密码太弱，至少需要6个字符。');
             } else {
                 setError('注册失败，请稍后再试。');
+                alert(`注册失败！这很可能是因为您还未更新最新的Firestore安全规则。\n\n错误详情: ${err.message}`);
             }
             console.error(err);
         } finally {
@@ -661,7 +680,7 @@ const SignupForm = () => { /* ... 内容无变化 ... */
         </div>
     );
 };
-const App = () => { /* ... 内容无变化 ... */ 
+const App = () => { 
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
